@@ -8,11 +8,11 @@ volatile int time_slice = 0; // Keeps track of elapsed milliseconds
 int button1Cursor = 0; //keeps track of cursor position for top animation
 bool cycleComplete = false;
 // button 1 pressed
-volatile int button1Downflag = 0;
+volatile int button1state;
 
 int idleTimer = 0;  // Moved out of volatile since it's only used in loop()
 int button1DownLastTime_slice = 0; // Stores last recorded time
-bool frogStanding = false; // Toggles between alternating idle animations
+bool frogStanding = true; // Toggles between alternating idle animations
 
 // button 1 released
 volatile int button1Upflag = 0;
@@ -23,7 +23,7 @@ bool button1UpToggleState = false;
 
 bool frog1Jumping = false;
 
-const int button1 = 8;
+#define BUTTON1_PIN 8
 
 void setup() {
 
@@ -49,14 +49,13 @@ void setup() {
 
   sei(); // Enable interrupts
 
-  pinMode(button1, INPUT); // We have external pulldown setup
+  pinMode(BUTTON1_PIN, INPUT); // We have external pulldown setup
 }
 
 void loop() {
   
     // button 1 pressed
-    if (button1Downflag == 1) {
-      button1Upflag = 0; 
+    if (button1state == 1) {
         if (time_slice != button1DownLastTime_slice) {  // Ensures we only increment once per timer tick
             idleTimer++;
             button1DownLastTime_slice = time_slice;
@@ -75,9 +74,8 @@ void loop() {
     }
   
   // button 1 released
-      if (button1Upflag == 1) {
+      if (button1state == 0) {
         
-        button1Downflag = 0; // set to false manually so no conflict
         // check current idle animation frame
         // if frogStanding false,then jump
         if (frogStanding == false){
@@ -122,6 +120,7 @@ void loop() {
           button1Cursor++;
           cycleComplete = false;
           frogStanding = true;
+          frog1Jumping = false;
         }
         
     }
@@ -129,7 +128,6 @@ void loop() {
     // Win condition
     if (button1Cursor == 15) {
       // crown the frog!
-      lcd.clear();
       winner(1);
     }
 
@@ -137,14 +135,12 @@ void loop() {
 }
 
 void button1ISR() {
-    if (digitalRead(button1) == HIGH && frog1jumping == false) {
-        button1Downflag = 1; // Set flag when button is pressed
-        button1Upflag = 0;
+    if (digitalRead(BUTTON1_PIN) == HIGH && frog1Jumping == false) {
+        button1state = 1;
     }
 
-    if (digitalRead(button1) == LOW && frog1jumping == false) {
-        button1Upflag = 1; // Set flag when button is pressed
-        button1Downflag = 0; 
+    if (digitalRead(BUTTON1_PIN) == LOW && frog1Jumping == false) {
+        button1state = 0;
     }
 }
 
