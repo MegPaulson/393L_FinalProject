@@ -21,6 +21,8 @@ int button1UpLastTime_slice = 0; // Stores last recorded time
 int button1UpFrameState = 0; // Used for incrementing jump frames
 bool button1UpToggleState = false;
 
+bool frog1Jumping = false;
+
 const int button1 = 8;
 
 void setup() {
@@ -79,13 +81,15 @@ void loop() {
         // check current idle animation frame
         // if frogStanding false,then jump
         if (frogStanding == false){
+          // to avoid interrupt
+          frog1Jumping = true;
           // we can jump-> start frame timer
           if (time_slice != button1UpLastTime_slice) {  // Ensures we only increment once per timer tick
             jumpTimer++;
             button1UpLastTime_slice = time_slice;
           }
 
-          if (jumpTimer >= 500 && !cycleComplete) { // Run through jump sequence
+          if (jumpTimer >= 100 && !cycleComplete) { // Run through jump sequence
               switch (button1UpFrameState) {
                   case 0: jump1Top0(button1Cursor); break;
                   case 1: jump2Top0(button1Cursor); break;
@@ -122,16 +126,23 @@ void loop() {
         
     }
 
+    // Win condition
+    if (button1Cursor == 15) {
+      // crown the frog!
+      lcd.clear();
+      winner(1);
+    }
+
 
 }
 
 void button1ISR() {
-    if (digitalRead(button1) == HIGH) {
+    if (digitalRead(button1) == HIGH && frog1jumping == false) {
         button1Downflag = 1; // Set flag when button is pressed
         button1Upflag = 0;
     }
 
-    if (digitalRead(button1) == LOW) {
+    if (digitalRead(button1) == LOW && frog1jumping == false) {
         button1Upflag = 1; // Set flag when button is pressed
         button1Downflag = 0; 
     }
@@ -309,3 +320,15 @@ lcd.write(byte(0));
 
 }
 
+void winner(int player) {
+  
+  byte image02[8] = {B10101, B11111, B11111, B00000, B01111, B11101, B11111, B11010};
+  
+  
+  lcd.createChar(0, image02);
+  
+  
+  lcd.setCursor(15, player-1);
+  lcd.write(byte(0));
+  
+  }
