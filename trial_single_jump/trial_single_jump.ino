@@ -43,6 +43,7 @@ bool frog2Jumping =false;
 void setup() {
 
 	lcd.begin(16,   2);
+	// Serial.begin(9600); 
 
 	attachInterrupt(digitalPinToInterrupt(2), button1ISR, CHANGE);
 
@@ -65,10 +66,11 @@ void setup() {
 	sei(); // Enable interrupts
 
 	pinMode(BUTTON1_PIN, INPUT); // We have external pulldown setup
+	pinMode(BUTTON2_PIN, INPUT); // We have external pulldown setup
 }
 
 void loop() {
-  
+
     // button 1 pressed
     if (button1state == 1) {
         if (time_slice != button1DownLastTime_slice) {  // Ensures we only increment once per timer tick
@@ -77,7 +79,9 @@ void loop() {
         }
 
 		// Reset flagtimer when button is pressed
-		if (idle1Timer >= 500) {
+		if (idle1Timer >= 100) {
+			// Serial.println(frog1Standing);
+
 			if (frog1Standing) {
 				idleDownTop0(button1Cursor, 0);
 			} else {
@@ -86,6 +90,7 @@ void loop() {
 			//frog1Standing = !frog1Standing; // Flip the toggle state
 			idle1Timer = 0;
 		}
+	}
 
     if (button2state == 1) {
         if (time_slice != button2DownLastTime_slice) {  // Ensures we only increment once per timer tick
@@ -94,7 +99,7 @@ void loop() {
         }
 
 		// Reset flagtimer when button is pressed
-		if (idle2Timer >= 500) {
+		if (idle2Timer >= 100) {
 			if (frog2Standing) {
 				idleDownTop0(button2Cursor, 1);
 			} else {
@@ -103,7 +108,6 @@ void loop() {
 			//frog1Standing = !frog1Standing; // Flip the toggle state
 			idle2Timer = 0;
 		}
-    }
     }
   
   // button 1 released
@@ -191,11 +195,12 @@ void frogJump(bool &cycleComplete, int &buttonCursor, int &jumpTimer, int &frogJ
 		buttonUpLastTime_slice = time_slice;
 	}
 
-	if (jumpTimer >= 80 && !cycleComplete) { // Run through jump sequence
+	if (jumpTimer >= 20 && !cycleComplete) { // Run through jump sequence
 		switch (frogJumpFrame) {
 			case 0: jump1Top0(buttonCursor, row); break;
 			case 1: jump2Top0(buttonCursor, row); break;
-      case 3: jump4Top0(buttonCursor, row); break;
+      		case 2: jump2Top0(buttonCursor, row); break;
+      		case 3: jump4Top0(buttonCursor, row); break;
 			case 4: jump5Top0(buttonCursor, row); break;
 			case 5: jump6Top0(buttonCursor, row); break;
 			case 6: jump7Top0(buttonCursor, row); break;
@@ -219,166 +224,190 @@ void frogFreezeStand(int buttonCursor, int row) {
 }
 
 void idleDownTop0(int buttonCursor, int row) {
-	lcd.setCursor(buttonCursor, row);
-	lcd.print(" ");
 
 	byte image01[8] = {B00000, B00000, B00000, B00000, B00000, B01111, B11101, B11111};
 
+	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
-	lcd.createChar(0, image01);
+
+
+	lcd.createChar(0, imgEmpty);
+	lcd.createChar(1, image01);
+
 
 
 	lcd.setCursor(buttonCursor, row);
 	lcd.write(byte(0));
+	lcd.setCursor(buttonCursor, row);
+	lcd.write(byte(1));
+	// lcd.print('x');
 	if (row == 0) {
 		frog1Standing = false;
 	} else {
 		frog2Standing = false;
 	}
+	// Serial.println("frog idle down");
 }
 
 void idleUpTop0(int buttonCursor, int row) {
-	lcd.setCursor(buttonCursor, row);
-	lcd.print(" ");
-
 
 	byte image01[8] = {B00000, B00000, B00000, B00000, B01111, B11101, B11111, B11010};
+	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
 
-	lcd.createChar(0, image01);
-
+	lcd.createChar(0, imgEmpty);
+	lcd.createChar(1, image01);
 
 	lcd.setCursor(buttonCursor, row);
 	lcd.write(byte(0));
+	lcd.setCursor(buttonCursor, row);
+	lcd.write(byte(1));
+
+
 	if (row == 0) {
 		frog1Standing = true;
 	} else {
 		frog2Standing = true;
 	}
+	// Serial.println("frog idle up");
+
 
 }
 
 void jump1Top0(int buttonCursor, int row) {
-	lcd.setCursor(buttonCursor, row);
-	lcd.print(" ");
 	byte image01[8] = {B00000, B00000, B00000, B01111, B11101, B11111, B10010, B01000};
+	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
 
-	lcd.createChar(0, image01);
 
+	lcd.createChar(0, imgEmpty);
+	lcd.createChar(1, image01);
 
 	lcd.setCursor(buttonCursor, row);
 	lcd.write(byte(0));
+	lcd.setCursor(buttonCursor, row);
+	lcd.write(byte(1));
 
 }
 
 void jump2Top0(int buttonCursor, int row) {
-	lcd.setCursor(buttonCursor, row);
-	lcd.print(" ");
 
 	byte image01[8] = {B00000, B00000, B00111, B01110, B01111, B01001, B10000, B00000};
+	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
 
-	lcd.createChar(0, image01);
 
+	lcd.createChar(0, imgEmpty);
+	lcd.createChar(1, image01);
 
 	lcd.setCursor(buttonCursor, row);
 	lcd.write(byte(0));
+	lcd.setCursor(buttonCursor, row);
+	lcd.write(byte(1));
 
 }
 
 void jump3Top0(int buttonCursor, int row) {
-	lcd.setCursor(buttonCursor, row);
-	lcd.print(" ");
 
 	byte image01[8] = {B00000, B00000, B00011, B00111, B00111, B01100, B00000, B00000};
 	byte image02[8] = {B00000, B00000, B10000, B10000, B10000, B00000, B00000, B00000};
+	
+	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
 
-	lcd.createChar(0, image01);
-	lcd.createChar(1, image02);
+	lcd.createChar(0, imgEmpty);
+	lcd.createChar(1, image01);
+	lcd.createChar(2, image02);
 
-
+	lcd.setCursor(buttonCursor-1, row);
+	lcd.write(byte(0));
 	lcd.setCursor(buttonCursor, row);
 	lcd.write(byte(0));
-	lcd.setCursor(buttonCursor + 1, row);
+	lcd.setCursor(buttonCursor, row);
 	lcd.write(byte(1));
+	lcd.setCursor(buttonCursor + 1, row);
+	lcd.write(byte(2));
 
 }
 
 void jump4Top0(int buttonCursor, int row) {
-	lcd.setCursor(buttonCursor-1, row);
-	lcd.print(" ");
-	lcd.setCursor(buttonCursor, row);
-	lcd.print(" ");
 
 	byte image01[8] = {B00000, B00000, B00001, B00011, B00011, B00010, B00100, B00000};
 	byte image02[8] = {B00000, B00000, B11000, B01000, B11000, B10000, B00000, B00000};
+	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
 
-	lcd.createChar(0, image01);
-	lcd.createChar(1, image02);
+	lcd.createChar(0, imgEmpty);
+	lcd.createChar(1, image01);
+	lcd.createChar(2, image02);
 
 
-	lcd.setCursor(button1Cursor, row);
+	lcd.setCursor(buttonCursor-1, row);
 	lcd.write(byte(0));
-	lcd.setCursor(button1Cursor + 1, row);
+	lcd.setCursor(buttonCursor, row);
+	lcd.write(byte(0));
+	lcd.setCursor(buttonCursor, row);
 	lcd.write(byte(1));
+	lcd.setCursor(buttonCursor + 1, row);
+	lcd.write(byte(2));
 
 }
 
 void jump5Top0(int buttonCursor, int row) {
-	lcd.setCursor(buttonCursor-1, row);
-	lcd.print(" ");
-	lcd.setCursor(buttonCursor, row);
-	lcd.print(" ");
 
 	byte image01[8] = {B00000, B00000, B00000, B00000, B00001, B00001, B00001, B00010};
 	byte image02[8] = {B00000, B00000, B00000, B11100, B10100, B11100, B01000, B00000};
+	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
 
-	lcd.createChar(0, image01);
+	lcd.createChar(0, imgEmpty);
 	lcd.createChar(1, image02);
+	lcd.createChar(2, image02);
 
 
+	lcd.setCursor(buttonCursor-1, row);
+	lcd.write(byte(0));
 	lcd.setCursor(buttonCursor, row);
 	lcd.write(byte(0));
-	lcd.setCursor(buttonCursor + 1, row);
+	lcd.setCursor(buttonCursor, row);
 	lcd.write(byte(1));
+	lcd.setCursor(buttonCursor + 1, row);
+	lcd.write(byte(2));
+
 
 }
 
 void jump6Top0(int buttonCursor, int row) {
-	lcd.setCursor(buttonCursor-1, row);
-	lcd.print(" ");
+
+	byte image01[8] = {B00000, B00000, B00000, B11110, B11010, B11110, B00100, B00000};
+	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
+
+
+
+	lcd.createChar(0, imgEmpty);
+	lcd.createChar(1, image01);
+
 	lcd.setCursor(buttonCursor, row);
-	lcd.print(" ");
-
-	byte image02[8] = {B00000, B00000, B00000, B11110, B11010, B11110, B00100, B00000};
-
-
-	lcd.createChar(0, image02);
-
-
-	lcd.setCursor(buttonCursor + 1, row);
 	lcd.write(byte(0));
+	lcd.setCursor(buttonCursor, row);
+	lcd.write(byte(1));
 
 }
 
 void jump7Top0(int buttonCursor, int row) {
-	lcd.setCursor(buttonCursor-1, row);
-	lcd.print(" ");
+
+	byte image01[8] = {B00000, B00000, B00000, B01111, B11101, B11111, B10010, B01000};
+	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
+
+
+
+	lcd.createChar(0, imgEmpty);
+	lcd.createChar(1, image01);
+
 	lcd.setCursor(buttonCursor, row);
-	lcd.print(" ");
-
-	byte image02[8] = {B00000, B00000, B00000, B01111, B11101, B11111, B10010, B01000};
-
-
-	lcd.createChar(0, image02);
-
-
-	lcd.setCursor(buttonCursor + 1, row);
 	lcd.write(byte(0));
+	lcd.setCursor(buttonCursor, row);
+	lcd.write(byte(1));
 
 }
 
