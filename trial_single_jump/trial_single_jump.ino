@@ -1,9 +1,10 @@
- 
 #include <LiquidCrystal.h>
 
 #define BUTTON1_PIN 8
-#define BUTTON2_PIN 3
+#define BUTTON2_PIN 9
 #define COMBINEDANALOG_PIN A1
+#define FROG1_CHAR_START 0  // Character slots 0-3 for frog 1
+#define FROG2_CHAR_START 4  // Character slots 4-7 for frog 2
 
 LiquidCrystal   lcd(12, 11, 7, 6, 5, 4); // RS, E, D4, D5, D6, D7
 
@@ -15,6 +16,9 @@ int button1Cursor = 0; //keeps track of cursor position for top animation
 int button2Cursor = 0;
 bool cycle1Complete = false;
 bool cycle2Complete = false;
+
+bool frog1IsIdling = false;
+bool frog2IsIdling = false;
 
 int idle1Timer = 0;  // Moved out of volatile since it's only used in loop()
 int button1DownLastTime_slice = 0; // Stores last recorded time
@@ -39,6 +43,13 @@ bool button2UpToggleState = false;
 bool frog1Jumping = false;
 bool frog2Jumping =false;
 
+int idleAnimationRate = 300;
+bool frog1UpdateIdle = false;
+bool frog2UpdateIdle = false;
+
+int frog1PrevIdleTimeSlice = 0;
+int frog2PrevIdleTimeSlice = 0;
+
 
 
 void setup() {
@@ -46,7 +57,7 @@ void setup() {
 	lcd.begin(16,   2);
 	// Serial.begin(9600); 
 
-	attachInterrupt(digitalPinToInterrupt(2), button1ISR, CHANGE);
+	attachInterrupt(digitalPinToInterrupt(2), buttonsISR, RISING);
 
 	cli(); // Disable interrupts
 
@@ -72,18 +83,14 @@ void setup() {
 }
 
 void loop() {
-
-
-
-    // button 1 pressed
-    if (button1state == 1) {
-        if (time_slice != button1DownLastTime_slice) {  // Ensures we only increment once per timer tick
-            idle1Timer++;
-            button1DownLastTime_slice = time_slice;
-        }
-
+    // frog 1 idle
+    if (button1state % 2== 1) {
+		if (time_slice - frog1PrevIdleTimeSlice >= idleAnimationRate) {
+			frog1UpdateIdle = true;
+			frog1PrevIdleTimeSlice = time_slice;
+		}
 		// Reset flagtimer when button is pressed
-		if (idle1Timer >= 100) {
+		if (frog1UpdateIdle) {
 			// Serial.println(frog1Standing);
 
 			if (frog1Standing) {
@@ -91,57 +98,50 @@ void loop() {
 			} else {
 				idleUpTop0(button1Cursor, 0);
 			}
-			//frog1Standing = !frog1Standing; // Flip the toggle state
-			idle1Timer = 0;
+			//frog1Standing = !frog1Standing; // Flip the toggle stat
+			frog1UpdateIdle = false;
+		}
+	} else {
+		// check current idle animation frame
+		// if frog1Standing false,then jump
+		if (frog1Standing == false){
+			// to avoid interrupt
+			frog1Jumping = true;
+			frogJump(cycle1Complete, button1Cursor, jump1Timer, frog1JumpFrame, button1UpLastTime_slice, 0);
+		}
+		else {
+			frogFreezeStand(button1Cursor, 0);
+		}
+		if (cycle1Complete){ // if we didn't release at the right time
+		//button1Downflag = 0; // set to false manually so no conflict
+			frog1JumpFrame = 0; 
+			button1Cursor++;
+			cycle1Complete = false;
+			frog1Standing = true;
+			frog1Jumping = false;
 		}
 	}
 
-    if (button2state == 1) {
-        if (time_slice != button2DownLastTime_slice) {  // Ensures we only increment once per timer tick
-            idle2Timer++;
-            button2DownLastTime_slice = time_slice;
-        }
+	// frog 2 idle
+    if (button2state % 2 == 1) {
+		if (time_slice - frog2PrevIdleTimeSlice >= idleAnimationRate) {
+			frog2UpdateIdle = true;
+			frog2PrevIdleTimeSlice = time_slice;
+		}
 
 		// Reset flagtimer when button is pressed
-		if (idle2Timer >= 100) {
+		if (frog2UpdateIdle) {
 			if (frog2Standing) {
 				idleDownTop0(button2Cursor, 1);
 			} else {
 				idleUpTop0(button2Cursor, 1);
 			}
 			//frog1Standing = !frog1Standing; // Flip the toggle state
-			idle2Timer = 0;
+			frog2UpdateIdle = false;
 		}
-    }
-  
-  // button 1 released
-      if (button1state == 0) {
-        
-        // check current idle animation frame
-        // if frog1Standing false,then jump
-        if (frog1Standing == false){
-			// to avoid interrupt
-			frog1Jumping = true;
-			frogJump(cycle1Complete, button1Cursor, jump1Timer, frog1JumpFrame, button1UpLastTime_slice, 0);
-        }
-        else {
-			frogFreezeStand(button1Cursor, 0);
-        }
-        if (cycle1Complete){ // if we didn't release at the right time
-          //button1Downflag = 0; // set to false manually so no conflict
-			frog1JumpFrame = 0; 
-			button1Cursor++;
-			cycle1Complete = false;
-			frog1Standing = true;
-			frog1Jumping = false;
-        }
-        
-    }
-
-	  // button 2 released
-      if (button2state == 0) {
-        
-        // check current idle animation frame
+    } else {
+		// frog 2 jump then stand
+		// check current idle animation frame
         // if frog1Standing false,then jump
         if (frog2Standing == false){
 			// to avoid interrupt
@@ -159,8 +159,8 @@ void loop() {
 			frog2Standing = true;
 			frog2Jumping = false;
         }
-        
-    }
+	}
+
     // Win condition
     if (button1Cursor == 15) {
 		// crown the frog!
@@ -168,22 +168,22 @@ void loop() {
     }
 }
 
-void button1ISR() {
+void buttonsISR() {
     if (digitalRead(BUTTON1_PIN) == HIGH && frog1Jumping == false) {
-        button1state = 1;
+        button1state++;
     }
 
-    if (digitalRead(BUTTON1_PIN) == LOW && frog1Jumping == false) {
-        button1state = 0;
-    }
+    // if (digitalRead(BUTTON1_PIN) == LOW && frog1Jumping == false) {
+    //     button1state = 0;
+    // }
     
     if (digitalRead(BUTTON2_PIN) == HIGH && frog2Jumping == false) {
-        button2state = 1;
+        button2state++;
     }
 
-    if (digitalRead(BUTTON2_PIN) == LOW && frog2Jumping == false) {
-        button2state = 0;
-    }
+    // if (digitalRead(BUTTON2_PIN) == LOW && frog2Jumping == false) {
+    //     button2state = 0;
+    // }
 
 }
 
@@ -241,51 +241,44 @@ void frogFreezeStand(int buttonCursor, int row) {
 }
 
 void idleDownTop0(int buttonCursor, int row) {
+    byte image01[8] = {B00000, B00000, B00000, B00000, B00000, B01111, B11101, B11111};
+    byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
-	byte image01[8] = {B00000, B00000, B00000, B00000, B00000, B01111, B11101, B11111};
+    // Use different character slots based on which frog
+    int charOffset = (row == 0) ? FROG1_CHAR_START : FROG2_CHAR_START;
+    
+    lcd.createChar(charOffset, imgEmpty);
+    lcd.createChar(charOffset + 1, image01);
 
-	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
-
-
-
-	lcd.createChar(0, imgEmpty);
-	lcd.createChar(1, image01);
-
-
-	clearRow(row);
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(1));
-	// lcd.print('x');
-	if (row == 0) {
-		frog1Standing = false;
-	} else {
-		frog2Standing = false;
-	}
-	// Serial.println("frog idle down");
+    clearRow(row);
+    lcd.setCursor(buttonCursor, row);
+    lcd.write(byte(charOffset + 1));
+    
+    if (row == 0) {
+        frog1Standing = false;
+    } else {
+        frog2Standing = false;
+    }
 }
 
 void idleUpTop0(int buttonCursor, int row) {
+    byte image01[8] = {B00000, B00000, B00000, B00000, B01111, B11101, B11111, B11010};
+    byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
-	byte image01[8] = {B00000, B00000, B00000, B00000, B01111, B11101, B11111, B11010};
-	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
+    int charOffset = (row == 0) ? FROG1_CHAR_START : FROG2_CHAR_START;
+    
+    lcd.createChar(charOffset, imgEmpty);
+    lcd.createChar(charOffset + 1, image01);
 
+    clearRow(row);
+    lcd.setCursor(buttonCursor, row);
+    lcd.write(byte(charOffset + 1));
 
-	lcd.createChar(0, imgEmpty);
-	lcd.createChar(1, image01);
-
-	clearRow(row);
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(1));
-
-
-	if (row == 0) {
-		frog1Standing = true;
-	} else {
-		frog2Standing = true;
-	}
-	// Serial.println("frog idle up");
-
-
+    if (row == 0) {
+        frog1Standing = true;
+    } else {
+        frog2Standing = true;
+    }
 }
 
 void jump1Top0(int buttonCursor, int row) {
