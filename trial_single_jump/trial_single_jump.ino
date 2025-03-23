@@ -3,6 +3,7 @@
 
 #define BUTTON1_PIN 8
 #define BUTTON2_PIN 3
+#define COMBINEDANALOG_PIN A1
 
 LiquidCrystal   lcd(12, 11, 7, 6, 5, 4); // RS, E, D4, D5, D6, D7
 
@@ -67,9 +68,12 @@ void setup() {
 
 	pinMode(BUTTON1_PIN, INPUT); // We have external pulldown setup
 	pinMode(BUTTON2_PIN, INPUT); // We have external pulldown setup
+	pinMode(COMBINEDANALOG_PIN, INPUT);
 }
 
 void loop() {
+
+
 
     // button 1 pressed
     if (button1state == 1) {
@@ -199,8 +203,8 @@ void frogJump(bool &cycleComplete, int &buttonCursor, int &jumpTimer, int &frogJ
 		switch (frogJumpFrame) {
 			case 0: jump1Top0(buttonCursor, row); break;
 			case 1: jump2Top0(buttonCursor, row); break;
-      		case 2: jump2Top0(buttonCursor, row); break;
-      		case 3: jump4Top0(buttonCursor, row); break;
+      case 2: jump3Top0(buttonCursor, row); break;
+      case 3: jump4Top0(buttonCursor, row); break;
 			case 4: jump5Top0(buttonCursor, row); break;
 			case 5: jump6Top0(buttonCursor, row); break;
 			case 6: jump7Top0(buttonCursor, row); break;
@@ -210,6 +214,19 @@ void frogJump(bool &cycleComplete, int &buttonCursor, int &jumpTimer, int &frogJ
 		frogJumpFrame++;   // Increment the frame state
 		jumpTimer = 0;           // Reset jump timer
 	} 
+}
+
+void clearRow(int row) {
+	//byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
+
+
+  //lcd.createChar(0, imgEmpty);
+
+
+  lcd.setCursor(0, row);
+  lcd.write("               ");
+
+	
 }
 
 void frogFreezeStand(int buttonCursor, int row) {
@@ -235,9 +252,7 @@ void idleDownTop0(int buttonCursor, int row) {
 	lcd.createChar(1, image01);
 
 
-
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(0));
+	clearRow(row);
 	lcd.setCursor(buttonCursor, row);
 	lcd.write(byte(1));
 	// lcd.print('x');
@@ -258,8 +273,7 @@ void idleUpTop0(int buttonCursor, int row) {
 	lcd.createChar(0, imgEmpty);
 	lcd.createChar(1, image01);
 
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(0));
+	clearRow(row);
 	lcd.setCursor(buttonCursor, row);
 	lcd.write(byte(1));
 
@@ -283,8 +297,7 @@ void jump1Top0(int buttonCursor, int row) {
 	lcd.createChar(0, imgEmpty);
 	lcd.createChar(1, image01);
 
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(0));
+	clearRow(row);
 	lcd.setCursor(buttonCursor, row);
 	lcd.write(byte(1));
 
@@ -293,15 +306,14 @@ void jump1Top0(int buttonCursor, int row) {
 void jump2Top0(int buttonCursor, int row) {
 
 	byte image01[8] = {B00000, B00000, B00111, B01110, B01111, B01001, B10000, B00000};
-	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
+	// byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
 
 
-	lcd.createChar(0, imgEmpty);
+	// lcd.createChar(0, imgEmpty);
 	lcd.createChar(1, image01);
 
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(0));
+	clearRow(row);
 	lcd.setCursor(buttonCursor, row);
 	lcd.write(byte(1));
 
@@ -319,10 +331,7 @@ void jump3Top0(int buttonCursor, int row) {
 	lcd.createChar(1, image01);
 	lcd.createChar(2, image02);
 
-	lcd.setCursor(buttonCursor-1, row);
-	lcd.write(byte(0));
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(0));
+	clearRow(row);
 	lcd.setCursor(buttonCursor, row);
 	lcd.write(byte(1));
 	lcd.setCursor(buttonCursor + 1, row);
@@ -342,10 +351,7 @@ void jump4Top0(int buttonCursor, int row) {
 	lcd.createChar(2, image02);
 
 
-	lcd.setCursor(buttonCursor-1, row);
-	lcd.write(byte(0));
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(0));
+	clearRow(row);
 	lcd.setCursor(buttonCursor, row);
 	lcd.write(byte(1));
 	lcd.setCursor(buttonCursor + 1, row);
@@ -361,14 +367,11 @@ void jump5Top0(int buttonCursor, int row) {
 
 
 	lcd.createChar(0, imgEmpty);
-	lcd.createChar(1, image02);
+	lcd.createChar(1, image01);
 	lcd.createChar(2, image02);
 
 
-	lcd.setCursor(buttonCursor-1, row);
-	lcd.write(byte(0));
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(0));
+	clearRow(row);
 	lcd.setCursor(buttonCursor, row);
 	lcd.write(byte(1));
 	lcd.setCursor(buttonCursor + 1, row);
@@ -387,9 +390,8 @@ void jump6Top0(int buttonCursor, int row) {
 	lcd.createChar(0, imgEmpty);
 	lcd.createChar(1, image01);
 
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(0));
-	lcd.setCursor(buttonCursor, row);
+	clearRow(row);
+	lcd.setCursor(buttonCursor+1, row);
 	lcd.write(byte(1));
 
 }
@@ -404,23 +406,20 @@ void jump7Top0(int buttonCursor, int row) {
 	lcd.createChar(0, imgEmpty);
 	lcd.createChar(1, image01);
 
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(0));
-	lcd.setCursor(buttonCursor, row);
+	clearRow(row);
+	lcd.setCursor(buttonCursor+1, row);
 	lcd.write(byte(1));
 
 }
 
 void idleUpTop1(int buttonCursor, int row) {
-	lcd.setCursor(buttonCursor, row);
-	lcd.print(" ");
 
 	byte image02[8] = {B00000, B00000, B00000, B00000, B11111, B11101, B11111, B11010};
 
 
 	lcd.createChar(0, image02);
 
-
+	clearRow(row);
 	lcd.setCursor(buttonCursor + 1, row);
 	lcd.write(byte(0));
 
@@ -428,15 +427,13 @@ void idleUpTop1(int buttonCursor, int row) {
 
 // when is this ever called?
 void idleDownTop1(int buttonCursor, int row) {
-	lcd.setCursor(buttonCursor, row);
-	lcd.print(" ");
 
 	byte image02[8] = {B00000, B00000, B00000, B00000, B00000, B11111, B11101, B11111};
 
 
 	lcd.createChar(0, image02);
 
-
+	clearRow(row);
 	lcd.setCursor(1, row);
 	lcd.write(byte(0));
 
