@@ -114,7 +114,7 @@ void loop() {
         if (frog1Standing == false){
 			// to avoid interrupt
 			frog1Jumping = true;
-			frogJump(cycle1Complete, button1Cursor, jump1Timer, frog1JumpFrame, button1UpLastTime_slice);
+			frogJump(cycle1Complete, button1Cursor, jump1Timer, frog1JumpFrame, button1UpLastTime_slice, 0);
         }
         else {
 			frogFreezeStand(button1Cursor, 0);
@@ -138,7 +138,7 @@ void loop() {
         if (frog2Standing == false){
 			// to avoid interrupt
 			frog2Jumping = true;
-			frogJump(cycle2Complete, button2Cursor, jump2Timer, frog2JumpFrame, button2UpLastTime_slice);
+			frogJump(cycle2Complete, button2Cursor, jump2Timer, frog2JumpFrame, button2UpLastTime_slice, 2);
         }
         else {
 			frogFreezeStand(button2Cursor, 1);
@@ -184,7 +184,7 @@ ISR(TIMER0_COMPA_vect) {
     time_slice++;  // Lightweight ISR, only updates a single variable
 }
 
-void frogJump(bool &cycleComplete, int &buttonCursor, int &jumpTimer, int &frogJumpFrame, int &buttonUpLastTime_slice) {
+void frogJump(bool &cycleComplete, int &buttonCursor, int &jumpTimer, int &frogJumpFrame, int &buttonUpLastTime_slice, int row) {
 
 	if (time_slice != buttonUpLastTime_slice) {  // Ensures we only increment once per timer tick
 		jumpTimer++;
@@ -193,14 +193,13 @@ void frogJump(bool &cycleComplete, int &buttonCursor, int &jumpTimer, int &frogJ
 
 	if (jumpTimer >= 80 && !cycleComplete) { // Run through jump sequence
 		switch (frogJumpFrame) {
-			case 0: jump1Top0(buttonCursor, 0); break;
-			case 1: jump2Top0(buttonCursor, 0); break;
-			case 2: jump3Top0(buttonCursor, 0); break;
-			case 3: jump4Top0(buttonCursor, 0); break;
-			case 4: jump5Top0(buttonCursor, 0); break;
-			case 5: jump6Top0(buttonCursor, 0); break;
-			case 6: jump7Top0(buttonCursor, 0); break;
-			case 7: idleUpTop1(buttonCursor, 0); cycleComplete = true; break;
+			case 0: jump1Top0(buttonCursor, row); break;
+			case 1: jump2Top0(buttonCursor, row); break;
+      case 3: jump4Top0(buttonCursor, row); break;
+			case 4: jump5Top0(buttonCursor, row); break;
+			case 5: jump6Top0(buttonCursor, row); break;
+			case 6: jump7Top0(buttonCursor, row); break;
+			case 7: idleUpTop1(buttonCursor, row); cycleComplete = true; break;
 		}
 
 		frogJumpFrame++;   // Increment the frame state
