@@ -115,7 +115,7 @@ void loop() {
 	} else {
 		// check current idle animation frame
 		// if frog1Standing false,then jump
-		if (frog1Standing == false){
+		if (frog1Standing == false && !rock1Placed){
 			// to avoid interrupt
 			frog1Jumping = true;
 			frogJump(cycle1Complete, button1Cursor, jump1Timer, frog1JumpFrame, button1UpLastTime_slice, 0);
@@ -154,7 +154,7 @@ void loop() {
 		// frog 2 jump then stand
 		// check current idle animation frame
         // if frog1Standing false,then jump
-        if (frog2Standing == false){
+        if (frog2Standing == false && !rock2Placed){
 			// to avoid interrupt
 			frog2Jumping = true;
 			frogJump(cycle2Complete, button2Cursor, jump2Timer, frog2JumpFrame, button2UpLastTime_slice, 2);
