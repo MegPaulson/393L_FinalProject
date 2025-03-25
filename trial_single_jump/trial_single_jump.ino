@@ -1,9 +1,15 @@
  
 #include <LiquidCrystal.h>
 
-#define BUTTON1_PIN 8
-#define BUTTON2_PIN 3
-#define COMBINEDANALOG_PIN A1
+#define BUTTON1_PIN 3
+#define BUTTON2_PIN 9
+#define ROCK1_PIN 8
+#define ROCK2_PIN 10
+#define CLOCK_PIN A5
+#define FROG1_CHAR_START 0  // Character slots 0-3 for frog 1
+#define FROG2_CHAR_START 4  // Character slots 4-7 for frog 2
+
+int tick = 0; //value written to clock pin, we alternate between zero and 1
 
 LiquidCrystal   lcd(12, 11, 7, 6, 5, 4); // RS, E, D4, D5, D6, D7
 
@@ -39,14 +45,35 @@ bool button2UpToggleState = false;
 bool frog1Jumping = false;
 bool frog2Jumping =false;
 
+int idleAnimationRate = 300;
+bool frog1UpdateIdle = false;
+bool frog2UpdateIdle = false;
 
+int frog1PrevIdleTimeSlice = 0;
+int frog2PrevIdleTimeSlice = 0;
+
+volatile int rock1Throw = 0; // player 1 has thrown a rock
+volatile int rock2Throw = 0; 
+bool rock1Placed = 0; // rock is in front of player 1- poor naming??.. gotta change this
+bool rock2Placed = 0; 
+int rock1Timer = 0; // time before rock is destroyed
+int rock2Timer = 0;
+int rock1LastTime_Slice = 0;
+int rock2LastTime_Slice = 0;
+
+int actionFlag = 0; // if the player interacts with the game then this is incremented
+int gameTimeoutLastTime_Slice = 0;
+int gameTimeout = 0; // 5 second timer to track whether the game should timeout (clear display and reset)
+bool displayOn = true;// if we turn off lcd during idle reset
 
 void setup() {
+
+  Serial.begin(9600);
 
 	lcd.begin(16,   2);
 	// Serial.begin(9600); 
 
-	attachInterrupt(digitalPinToInterrupt(2), button1ISR, CHANGE);
+	attachInterrupt(digitalPinToInterrupt(2), button1ISR, RISING);
 
 	cli(); // Disable interrupts
 
@@ -68,22 +95,46 @@ void setup() {
 
 	pinMode(BUTTON1_PIN, INPUT); // We have external pulldown setup
 	pinMode(BUTTON2_PIN, INPUT); // We have external pulldown setup
-	pinMode(COMBINEDANALOG_PIN, INPUT);
+	pinMode(ROCK1_PIN, INPUT);
+	pinMode(ROCK2_PIN, INPUT);
+	pinMode(CLOCK_PIN, OUTPUT);
 }
 
 void loop() {
 
+	if (actionFlag > 0){
+		actionFlag = 0;
+		gameTimeout = 0;
+		if (!displayOn){
+			lcd.display();
+		}
+
+	} else {
+		if (time_slice != gameTimeoutLastTime_Slice) {  
+            gameTimeout++;
+            gameTimeoutLastTime_Slice = time_slice;
+        }
+
+		if (gameTimeout >= 5000) {
+      lcd.clear();
+			lcd.noDisplay();
+			button1Cursor = 0;
+			button2Cursor = 0;
+			gameTimeout = 0;
+			displayOn = false;
+		}
+	}
 
 
     // button 1 pressed
     if (button1state == 1) {
-        if (time_slice != button1DownLastTime_slice) {  // Ensures we only increment once per timer tick
-            idle1Timer++;
-            button1DownLastTime_slice = time_slice;
+		if (time_slice - frog1PrevIdleTimeSlice >= idleAnimationRate) {
+            frog1UpdateIdle = true;
+            frog1PrevIdleTimeSlice = time_slice;
         }
 
 		// Reset flagtimer when button is pressed
-		if (idle1Timer >= 100) {
+		if (frog1UpdateIdle) {
 			// Serial.println(frog1Standing);
 
 			if (frog1Standing) {
@@ -92,30 +143,30 @@ void loop() {
 				idleUpTop0(button1Cursor, 0);
 			}
 			//frog1Standing = !frog1Standing; // Flip the toggle state
-			idle1Timer = 0;
+			frog1UpdateIdle = false;
 		}
 	}
 
     if (button2state == 1) {
-        if (time_slice != button2DownLastTime_slice) {  // Ensures we only increment once per timer tick
-            idle2Timer++;
-            button2DownLastTime_slice = time_slice;
+        if (time_slice - frog2PrevIdleTimeSlice >= idleAnimationRate) {
+            frog2UpdateIdle = true;
+            frog2PrevIdleTimeSlice = time_slice;
         }
 
 		// Reset flagtimer when button is pressed
-		if (idle2Timer >= 100) {
+		if (frog2UpdateIdle) {
 			if (frog2Standing) {
 				idleDownTop0(button2Cursor, 1);
 			} else {
 				idleUpTop0(button2Cursor, 1);
 			}
 			//frog1Standing = !frog1Standing; // Flip the toggle state
-			idle2Timer = 0;
+			frog2UpdateIdle = false;
 		}
     }
   
   // button 1 released
-      if (button1state == 0) {
+      if (button1state == 0 && !rock1Placed) {
         
         // check current idle animation frame
         // if frog1Standing false,then jump
@@ -139,7 +190,7 @@ void loop() {
     }
 
 	  // button 2 released
-      if (button2state == 0) {
+      if (button2state == 0 && !rock2Placed) {
         
         // check current idle animation frame
         // if frog1Standing false,then jump
@@ -161,35 +212,99 @@ void loop() {
         }
         
     }
-    // Win condition
-    if (button1Cursor == 15) {
-		// crown the frog!
-		winner(1);
+  // Win condition
+  if (button1Cursor == 15 && button2Cursor != 15) {
+  // crown the frog!
+    winner(0);
+  } else if (button2Cursor == 15 && button1Cursor != 15) {
+    winner(1);
+	}
+
+	if (rock1Throw == 1) { // rock has been thrown by player 1
+        if (time_slice != rock1LastTime_Slice) {
+            rock1Timer++;
+            rock1LastTime_Slice = time_slice;
+        }
+        if (frog2Jumping == false) {
+            rock(button2Cursor, 1); // place rock w/ player 2's cursor, on row 2 (bottom)
+        } else {
+            rock(button2Cursor + 1, 1); //anticipate where frog will land
+        }
+        rock2Placed = 1;
+
+        if (rock1Timer >= 400 && rock2Placed == 1) { //time to remove rock (timeout to destroy)
+                clearRock(button2Cursor, 1);
+                rock2Placed = 0;
+                rock1Throw = 0;
+                rock1Timer = 0 ;
+        }
     }
+
+    if (rock2Throw == 1) { // rock has been thrown by player 2
+        if (time_slice != rock2LastTime_Slice) {  // Ensures we only increment once per timer tick
+            rock2Timer++;
+            rock2LastTime_Slice = time_slice;
+        }
+        if (frog1Jumping == false) {
+            rock(button1Cursor, 0); // place rock w/ player 2's cursor, on row 2 (bottom)
+        } else {
+            rock(button1Cursor + 1, 0); //anticipate where frog will land
+        }
+        rock1Placed = 1;
+
+        if (rock2Timer >= 400 && rock1Placed == 1) { //time to remove rock (timeout to destroy)
+            clearRock(button1Cursor, 0);
+            rock1Placed = 0;
+            rock2Throw = 0;
+            rock2Timer = 0;
+        }
+    }
+
 }
 
 void button1ISR() {
     if (digitalRead(BUTTON1_PIN) == HIGH && frog1Jumping == false) {
         button1state = 1;
+        // Serial.println("B1 down");
     }
 
     if (digitalRead(BUTTON1_PIN) == LOW && frog1Jumping == false) {
         button1state = 0;
+        Serial.println("B1 up");
     }
     
     if (digitalRead(BUTTON2_PIN) == HIGH && frog2Jumping == false) {
         button2state = 1;
+        // Serial.println("B2 down");
     }
 
     if (digitalRead(BUTTON2_PIN) == LOW && frog2Jumping == false) {
         button2state = 0;
+        // Serial.println("B2 up");
     }
+
+	if (digitalRead(ROCK1_PIN) == HIGH) {
+        rock1Throw = 1;
+        // Serial.println("rock1");
+    }
+    if (digitalRead(ROCK2_PIN) == HIGH) {
+        rock2Throw = 1;
+        // Serial.println("rock2");
+    }
+    Serial.println("int");
+  
+
+	actionFlag = button1state + button2state + rock1Throw + rock2Throw;
+
+ 
 
 }
 
 // Timer ISR (1ms per tick)
 ISR(TIMER0_COMPA_vect) {
     time_slice++;  // Lightweight ISR, only updates a single variable
+	digitalWrite(CLOCK_PIN, tick);
+	tick = !tick;
 }
 
 void frogJump(bool &cycleComplete, int &buttonCursor, int &jumpTimer, int &frogJumpFrame, int &buttonUpLastTime_slice, int row) {
@@ -203,8 +318,8 @@ void frogJump(bool &cycleComplete, int &buttonCursor, int &jumpTimer, int &frogJ
 		switch (frogJumpFrame) {
 			case 0: jump1Top0(buttonCursor, row); break;
 			case 1: jump2Top0(buttonCursor, row); break;
-      case 2: jump3Top0(buttonCursor, row); break;
-      case 3: jump4Top0(buttonCursor, row); break;
+      		case 2: jump3Top0(buttonCursor, row); break;
+      		case 3: jump4Top0(buttonCursor, row); break;
 			case 4: jump5Top0(buttonCursor, row); break;
 			case 5: jump6Top0(buttonCursor, row); break;
 			case 6: jump7Top0(buttonCursor, row); break;
@@ -230,224 +345,216 @@ void clearRow(int row) {
 }
 
 void frogFreezeStand(int buttonCursor, int row) {
-	byte image01[8] = {B00000, B00000, B00000, B00000, B01111, B11101, B11111, B11010};
+    byte image01[8] = {B00000, B00000, B00000, B00000, B01111, B11101, B11111, B11010};
 
+    int charOffset = (row == 0) ? FROG1_CHAR_START : FROG2_CHAR_START;
 
-	lcd.createChar(0, image01);
+    lcd.createChar(charOffset, image01);
 
-
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(0));
+    lcd.setCursor(buttonCursor, row);
+    lcd.write(byte(charOffset));
 }
 
 void idleDownTop0(int buttonCursor, int row) {
+    byte image01[8] = {B00000, B00000, B00000, B00000, B00000, B01111, B11101, B11111};
+    byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
-	byte image01[8] = {B00000, B00000, B00000, B00000, B00000, B01111, B11101, B11111};
+    // Use different character slots based on which frog
+    int charOffset = (row == 0) ? FROG1_CHAR_START : FROG2_CHAR_START;
 
-	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
+    lcd.createChar(charOffset, imgEmpty);
+    lcd.createChar(charOffset + 1, image01);
 
+    clearRow(row);
+    lcd.setCursor(buttonCursor, row);
+    lcd.write(byte(charOffset + 1));
 
-
-	lcd.createChar(0, imgEmpty);
-	lcd.createChar(1, image01);
-
-
-	clearRow(row);
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(1));
-	// lcd.print('x');
-	if (row == 0) {
-		frog1Standing = false;
-	} else {
-		frog2Standing = false;
-	}
-	// Serial.println("frog idle down");
+    if (row == 0) {
+        frog1Standing = false;
+    } else {
+        frog2Standing = false;
+    }
 }
 
 void idleUpTop0(int buttonCursor, int row) {
+    byte image01[8] = {B00000, B00000, B00000, B00000, B01111, B11101, B11111, B11010};
+    byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
-	byte image01[8] = {B00000, B00000, B00000, B00000, B01111, B11101, B11111, B11010};
-	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
+    int charOffset = (row == 0) ? FROG1_CHAR_START : FROG2_CHAR_START;
 
+    lcd.createChar(charOffset, imgEmpty);
+    lcd.createChar(charOffset + 1, image01);
 
-	lcd.createChar(0, imgEmpty);
-	lcd.createChar(1, image01);
+    clearRow(row);
+    lcd.setCursor(buttonCursor, row);
+    lcd.write(byte(charOffset + 1));
 
-	clearRow(row);
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(1));
-
-
-	if (row == 0) {
-		frog1Standing = true;
-	} else {
-		frog2Standing = true;
-	}
-	// Serial.println("frog idle up");
-
-
+    if (row == 0) {
+        frog1Standing = true;
+    } else {
+        frog2Standing = true;
+    }
 }
 
 void jump1Top0(int buttonCursor, int row) {
-	byte image01[8] = {B00000, B00000, B00000, B01111, B11101, B11111, B10010, B01000};
-	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
+    byte image01[8] = {B00000, B00000, B00000, B01111, B11101, B11111, B10010, B01000};
+    byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
+    int charOffset = (row == 0) ? FROG1_CHAR_START : FROG2_CHAR_START;
 
+    lcd.createChar(charOffset, imgEmpty);
+    lcd.createChar(charOffset + 1, image01);
 
-	lcd.createChar(0, imgEmpty);
-	lcd.createChar(1, image01);
-
-	clearRow(row);
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(1));
-
+    clearRow(row);
+    lcd.setCursor(buttonCursor, row);
+    lcd.write(byte(charOffset + 1));
 }
 
 void jump2Top0(int buttonCursor, int row) {
+    byte image01[8] = {B00000, B00000, B00111, B01110, B01111, B01001, B10000, B00000};
+    byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
-	byte image01[8] = {B00000, B00000, B00111, B01110, B01111, B01001, B10000, B00000};
-	// byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
+    int charOffset = (row == 0) ? FROG1_CHAR_START : FROG2_CHAR_START;
 
+    lcd.createChar(charOffset, imgEmpty);
+    lcd.createChar(charOffset + 1, image01);
 
-
-	// lcd.createChar(0, imgEmpty);
-	lcd.createChar(1, image01);
-
-	clearRow(row);
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(1));
-
+    clearRow(row);
+    lcd.setCursor(buttonCursor, row);
+    lcd.write(byte(charOffset + 1));
 }
 
 void jump3Top0(int buttonCursor, int row) {
+    byte image01[8] = {B00000, B00000, B00011, B00111, B00111, B01100, B00000, B00000};
+    byte image02[8] = {B00000, B00000, B10000, B10000, B10000, B00000, B00000, B00000};
+    byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
-	byte image01[8] = {B00000, B00000, B00011, B00111, B00111, B01100, B00000, B00000};
-	byte image02[8] = {B00000, B00000, B10000, B10000, B10000, B00000, B00000, B00000};
-	
-	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
+    int charOffset = (row == 0) ? FROG1_CHAR_START : FROG2_CHAR_START;
 
+    lcd.createChar(charOffset, imgEmpty);
+    lcd.createChar(charOffset + 1, image01);
+    lcd.createChar(charOffset + 2, image02);
 
-	lcd.createChar(0, imgEmpty);
-	lcd.createChar(1, image01);
-	lcd.createChar(2, image02);
-
-	clearRow(row);
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(1));
-	lcd.setCursor(buttonCursor + 1, row);
-	lcd.write(byte(2));
-
+    clearRow(row);
+    lcd.setCursor(buttonCursor, row);
+    lcd.write(byte(charOffset + 1));
+    lcd.setCursor(buttonCursor + 1, row);
+    lcd.write(byte(charOffset + 2));
 }
 
 void jump4Top0(int buttonCursor, int row) {
+    byte image01[8] = {B00000, B00000, B00001, B00011, B00011, B00010, B00100, B00000};
+    byte image02[8] = {B00000, B00000, B11000, B01000, B11000, B10000, B00000, B00000};
+    byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
-	byte image01[8] = {B00000, B00000, B00001, B00011, B00011, B00010, B00100, B00000};
-	byte image02[8] = {B00000, B00000, B11000, B01000, B11000, B10000, B00000, B00000};
-	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
+    int charOffset = (row == 0) ? FROG1_CHAR_START : FROG2_CHAR_START;
 
+    lcd.createChar(charOffset, imgEmpty);
+    lcd.createChar(charOffset + 1, image01);
+    lcd.createChar(charOffset + 2, image02);
 
-	lcd.createChar(0, imgEmpty);
-	lcd.createChar(1, image01);
-	lcd.createChar(2, image02);
-
-
-	clearRow(row);
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(1));
-	lcd.setCursor(buttonCursor + 1, row);
-	lcd.write(byte(2));
-
+    clearRow(row);
+    lcd.setCursor(buttonCursor, row);
+    lcd.write(byte(charOffset + 1));
+    lcd.setCursor(buttonCursor + 1, row);
+    lcd.write(byte(charOffset + 2));
 }
 
 void jump5Top0(int buttonCursor, int row) {
+    byte image01[8] = {B00000, B00000, B00000, B00000, B00001, B00001, B00001, B00010};
+    byte image02[8] = {B00000, B00000, B00000, B11100, B10100, B11100, B01000, B00000};
+    byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
-	byte image01[8] = {B00000, B00000, B00000, B00000, B00001, B00001, B00001, B00010};
-	byte image02[8] = {B00000, B00000, B00000, B11100, B10100, B11100, B01000, B00000};
-	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
+    int charOffset = (row == 0) ? FROG1_CHAR_START : FROG2_CHAR_START;
 
+    lcd.createChar(charOffset, imgEmpty);
+    lcd.createChar(charOffset + 1, image01);
+    lcd.createChar(charOffset + 2, image02);
 
-	lcd.createChar(0, imgEmpty);
-	lcd.createChar(1, image01);
-	lcd.createChar(2, image02);
-
-
-	clearRow(row);
-	lcd.setCursor(buttonCursor, row);
-	lcd.write(byte(1));
-	lcd.setCursor(buttonCursor + 1, row);
-	lcd.write(byte(2));
-
-
+    clearRow(row);
+    lcd.setCursor(buttonCursor, row);
+    lcd.write(byte(charOffset + 1));
+    lcd.setCursor(buttonCursor + 1, row);
+    lcd.write(byte(charOffset + 2));
 }
 
 void jump6Top0(int buttonCursor, int row) {
+    byte image01[8] = {B00000, B00000, B00000, B11110, B11010, B11110, B00100, B00000};
+    byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
-	byte image01[8] = {B00000, B00000, B00000, B11110, B11010, B11110, B00100, B00000};
-	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
+    int charOffset = (row == 0) ? FROG1_CHAR_START : FROG2_CHAR_START;
 
+    lcd.createChar(charOffset, imgEmpty);
+    lcd.createChar(charOffset + 1, image01);
 
-
-	lcd.createChar(0, imgEmpty);
-	lcd.createChar(1, image01);
-
-	clearRow(row);
-	lcd.setCursor(buttonCursor+1, row);
-	lcd.write(byte(1));
-
+    clearRow(row);
+    lcd.setCursor(buttonCursor+1, row);
+    lcd.write(byte(charOffset + 1));
 }
 
 void jump7Top0(int buttonCursor, int row) {
+    byte image01[8] = {B00000, B00000, B00000, B01111, B11101, B11111, B10010, B01000};
+    byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
 
-	byte image01[8] = {B00000, B00000, B00000, B01111, B11101, B11111, B10010, B01000};
-	byte imgEmpty[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
+    int charOffset = (row == 0) ? FROG1_CHAR_START : FROG2_CHAR_START;
 
+    lcd.createChar(charOffset, imgEmpty);
+    lcd.createChar(charOffset + 1, image01);
 
-
-	lcd.createChar(0, imgEmpty);
-	lcd.createChar(1, image01);
-
-	clearRow(row);
-	lcd.setCursor(buttonCursor+1, row);
-	lcd.write(byte(1));
-
+    clearRow(row);
+    lcd.setCursor(buttonCursor+1, row);
+    lcd.write(byte(charOffset + 1));
 }
 
 void idleUpTop1(int buttonCursor, int row) {
+    byte image02[8] = {B00000, B00000, B00000, B00000, B11111, B11101, B11111, B11010};
 
-	byte image02[8] = {B00000, B00000, B00000, B00000, B11111, B11101, B11111, B11010};
+    int charOffset = (row == 0) ? FROG1_CHAR_START : FROG2_CHAR_START;
 
+    lcd.createChar(charOffset, image02);
 
-	lcd.createChar(0, image02);
-
-	clearRow(row);
-	lcd.setCursor(buttonCursor + 1, row);
-	lcd.write(byte(0));
-
+    clearRow(row);
+    lcd.setCursor(buttonCursor + 1, row);
+    lcd.write(byte(charOffset));
 }
 
-// when is this ever called?
 void idleDownTop1(int buttonCursor, int row) {
+    byte image02[8] = {B00000, B00000, B00000, B00000, B00000, B11111, B11101, B11111};
 
-	byte image02[8] = {B00000, B00000, B00000, B00000, B00000, B11111, B11101, B11111};
+    int charOffset = (row == 0) ? FROG1_CHAR_START : FROG2_CHAR_START;
 
+    lcd.createChar(charOffset, image02);
 
-	lcd.createChar(0, image02);
-
-	clearRow(row);
-	lcd.setCursor(1, row);
-	lcd.write(byte(0));
-
+    clearRow(row);
+    lcd.setCursor(1, row);
+    lcd.write(byte(charOffset));
 }
 
-void winner(int player) {
+void winner(int row) {
 	
 	byte image02[8] = {B10101, B11111, B11111, B00000, B01111, B11101, B11111, B11010};
+
+  int charOffset = (row == 0) ? FROG1_CHAR_START : FROG2_CHAR_START;
+
+  lcd.createChar(charOffset, image02);
 	
 	
-	lcd.createChar(0, image02);
-	
-	
-	lcd.setCursor(15, player-1);
-	lcd.write(byte(0));
+	lcd.setCursor(15, row);
+	lcd.write(byte(charOffset));
   
   }
+
+void rock(int button1Cursor, int row) { // LCD row for rock placement
+	byte image08[8] = {B00000, B00000, B01110, B10101, B10111, B10001, B01110, B00000};
+ 	lcd.createChar(7, image08);
+	lcd.setCursor(button1Cursor + 1, row); //rock at next available segment
+	lcd.write(byte(7)); 
+}
+
+void clearRock(int button1Cursor, int row){ //clear segment with rock position
+//   byte image01[8] = {B00000, B00000, B00000, B00000, B00000, B00000, B00000, B00000};
+//   lcd.createChar(8, image01);
+	lcd.setCursor(button1Cursor + 1, row); // Use stored row and column variables 
+	lcd.write(" "); 
+}
+
