@@ -1,4 +1,3 @@
- 
 #include <LiquidCrystal.h>
 
 #define BUTTON1_PIN 3
@@ -8,6 +7,9 @@
 #define CLOCK_PIN A5
 #define FROG1_CHAR_START 0  // Character slots 0-3 for frog 1
 #define FROG2_CHAR_START 4  // Character slots 4-7 for frog 2
+#define INTERRUPT_PIN 2
+
+const int MAX_ROCKS_PER_ROUND = 3;
 
 int tick = 0; //value written to clock pin, we alternate between zero and 1
 
@@ -66,14 +68,25 @@ int gameTimeoutLastTime_Slice = 0;
 int gameTimeout = 0; // 5 second timer to track whether the game should timeout (clear display and reset)
 bool displayOn = true;// if we turn off lcd during idle reset
 
-void setup() {
+int jumpAnimationRate = 70; // Frame rate for jump animation (faster than idle)
+bool frog1UpdateJump = false;
+bool frog2UpdateJump = false;
 
-  Serial.begin(9600);
+int frog1PrevJumpTimeSlice = 0;
+int frog2PrevJumpTimeSlice = 0;
+
+// Add variables to track rock throws per player
+int rock1ThrowCount = 0;
+int rock2ThrowCount = 0;
+
+int frogWon = 0;
+
+void setup() {
 
 	lcd.begin(16,   2);
 	// Serial.begin(9600); 
 
-	attachInterrupt(digitalPinToInterrupt(2), button1ISR, RISING);
+	attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN), buttonsISR, RISING);
 
 	cli(); // Disable interrupts
 
@@ -102,11 +115,22 @@ void setup() {
 
 void loop() {
 
+	actionFlag = button1state + button2state + rock1Throw + rock2Throw;
+
 	if (actionFlag > 0){
-		actionFlag = 0;
 		gameTimeout = 0;
 		if (!displayOn){
 			lcd.display();
+			displayOn = true;
+			        // Reset all button states when display comes back on
+			button1state = 0;
+			button2state = 0;
+			frog1Jumping = false;
+			frog2Jumping = false;
+			
+			// Reset rock throw counts for new round
+			rock1ThrowCount = 0;
+			rock2ThrowCount = 0;
 		}
 
 	} else {
@@ -115,8 +139,8 @@ void loop() {
             gameTimeoutLastTime_Slice = time_slice;
         }
 
-		if (gameTimeout >= 5000) {
-      lcd.clear();
+		if (gameTimeout >= 500) {
+     		lcd.clear();
 			lcd.noDisplay();
 			button1Cursor = 0;
 			button2Cursor = 0;
@@ -127,53 +151,64 @@ void loop() {
 
 
     // button 1 pressed
-    if (button1state == 1) {
-		if (time_slice - frog1PrevIdleTimeSlice >= idleAnimationRate) {
+    if (button1state == 1 && !rock1Placed && frogWon != 1) {  // Only allow idle if no rock is placed
+        if (time_slice - frog1PrevIdleTimeSlice >= idleAnimationRate) {
             frog1UpdateIdle = true;
             frog1PrevIdleTimeSlice = time_slice;
         }
+        // FIXME 
+        // Reset flagtimer when button is pressed
+        if (frog1UpdateIdle) {
+            // Serial.println(frog1Standing);
 
-		// Reset flagtimer when button is pressed
-		if (frog1UpdateIdle) {
-			// Serial.println(frog1Standing);
+            if (frog1Standing) {
+                idleDownTop0(button1Cursor, 0);
+            } else {
+                idleUpTop0(button1Cursor, 0);
+            }
+            //frog1Standing = !frog1Standing; // Flip the toggle state
+            frog1UpdateIdle = false;
+        }
+    }
 
-			if (frog1Standing) {
-				idleDownTop0(button1Cursor, 0);
-			} else {
-				idleUpTop0(button1Cursor, 0);
-			}
-			//frog1Standing = !frog1Standing; // Flip the toggle state
-			frog1UpdateIdle = false;
-		}
-	}
-
-    if (button2state == 1) {
+    // button 2 pressed
+    if (button2state == 1 && !rock2Placed && frogWon != 2) {  // Only allow idle if no rock is placed
         if (time_slice - frog2PrevIdleTimeSlice >= idleAnimationRate) {
             frog2UpdateIdle = true;
             frog2PrevIdleTimeSlice = time_slice;
         }
 
-		// Reset flagtimer when button is pressed
-		if (frog2UpdateIdle) {
-			if (frog2Standing) {
-				idleDownTop0(button2Cursor, 1);
-			} else {
-				idleUpTop0(button2Cursor, 1);
-			}
-			//frog1Standing = !frog1Standing; // Flip the toggle state
-			frog2UpdateIdle = false;
-		}
+        // Reset flagtimer when button is pressed
+        if (frog2UpdateIdle) {
+            if (frog2Standing) {
+                idleDownTop0(button2Cursor, 1);
+            } else {
+                idleUpTop0(button2Cursor, 1);
+            }
+            //frog1Standing = !frog1Standing; // Flip the toggle state
+            frog2UpdateIdle = false;
+        }
     }
   
   // button 1 released
-      if (button1state == 0 && !rock1Placed) {
+      if (button1state == 0 && !rock1Placed && frogWon != 1) {
         
         // check current idle animation frame
         // if frog1Standing false,then jump
         if (frog1Standing == false){
 			// to avoid interrupt
 			frog1Jumping = true;
-			frogJump(cycle1Complete, button1Cursor, jump1Timer, frog1JumpFrame, button1UpLastTime_slice, 0);
+			
+			// Check if it's time to update the jump frame
+			if (time_slice - frog1PrevJumpTimeSlice >= jumpAnimationRate) {
+				frog1UpdateJump = true;
+				frog1PrevJumpTimeSlice = time_slice;
+			}
+			
+			if (frog1UpdateJump) {
+				frogJumpFrame(cycle1Complete, button1Cursor, frog1JumpFrame, 0);
+				frog1UpdateJump = false;
+			}
         }
         else {
 			frogFreezeStand(button1Cursor, 0);
@@ -181,7 +216,10 @@ void loop() {
         if (cycle1Complete){ // if we didn't release at the right time
           //button1Downflag = 0; // set to false manually so no conflict
 			frog1JumpFrame = 0; 
-			button1Cursor++;
+			// Add cap to ensure cursor doesn't exceed 15
+			if (button1Cursor < 15) {
+				button1Cursor++;
+			}
 			cycle1Complete = false;
 			frog1Standing = true;
 			frog1Jumping = false;
@@ -197,7 +235,17 @@ void loop() {
         if (frog2Standing == false){
 			// to avoid interrupt
 			frog2Jumping = true;
-			frogJump(cycle2Complete, button2Cursor, jump2Timer, frog2JumpFrame, button2UpLastTime_slice, 2);
+			
+			// Check if it's time to update the jump frame
+			if (time_slice - frog2PrevJumpTimeSlice >= jumpAnimationRate) {
+				frog2UpdateJump = true;
+				frog2PrevJumpTimeSlice = time_slice;
+			}
+			
+			if (frog2UpdateJump) {
+				frogJumpFrame(cycle2Complete, button2Cursor, frog2JumpFrame, 1);
+				frog2UpdateJump = false;
+			}
         }
         else {
 			frogFreezeStand(button2Cursor, 1);
@@ -205,7 +253,10 @@ void loop() {
         if (cycle2Complete){ // if we didn't release at the right time
           //button1Downflag = 0; // set to false manually so no conflict
 			frog2JumpFrame = 0; 
-			button2Cursor++;
+			// Add cap to ensure cursor doesn't exceed 15
+			if (button2Cursor < 15) {
+				button2Cursor++;
+			}
 			cycle2Complete = false;
 			frog2Standing = true;
 			frog2Jumping = false;
@@ -214,13 +265,13 @@ void loop() {
     }
   // Win condition
   if (button1Cursor == 15 && button2Cursor != 15) {
-  // crown the frog!
-    winner(0);
+    // crown the frog!
+        winner(0);
   } else if (button2Cursor == 15 && button1Cursor != 15) {
-    winner(1);
-	}
+        winner(1);
+        }
 
-	if (rock1Throw == 1) { // rock has been thrown by player 1
+	if (rock1Throw == 1 && rock1ThrowCount < MAX_ROCKS_PER_ROUND) { // rock has been thrown by player 1
         if (time_slice != rock1LastTime_Slice) {
             rock1Timer++;
             rock1LastTime_Slice = time_slice;
@@ -237,10 +288,14 @@ void loop() {
                 rock2Placed = 0;
                 rock1Throw = 0;
                 rock1Timer = 0 ;
+                rock1ThrowCount++; // Increment rock throw count
         }
+    } else if (rock1Throw == 1 && rock1ThrowCount >= MAX_ROCKS_PER_ROUND) {
+        // If player has used all rocks, just reset the throw flag
+        rock1Throw = 0;
     }
 
-    if (rock2Throw == 1) { // rock has been thrown by player 2
+    if (rock2Throw == 1 && rock2ThrowCount < MAX_ROCKS_PER_ROUND) { // rock has been thrown by player 2
         if (time_slice != rock2LastTime_Slice) {  // Ensures we only increment once per timer tick
             rock2Timer++;
             rock2LastTime_Slice = time_slice;
@@ -257,47 +312,38 @@ void loop() {
             rock1Placed = 0;
             rock2Throw = 0;
             rock2Timer = 0;
+            rock2ThrowCount++; // Increment rock throw count
         }
+    } else if (rock2Throw == 1 && rock2ThrowCount >= MAX_ROCKS_PER_ROUND) {
+        // If player has used all rocks, just reset the throw flag
+        rock2Throw = 0;
     }
 
 }
 
-void button1ISR() {
+void buttonsISR() {
     if (digitalRead(BUTTON1_PIN) == HIGH && frog1Jumping == false) {
         button1state = 1;
-        // Serial.println("B1 down");
     }
 
     if (digitalRead(BUTTON1_PIN) == LOW && frog1Jumping == false) {
         button1state = 0;
-        Serial.println("B1 up");
     }
     
     if (digitalRead(BUTTON2_PIN) == HIGH && frog2Jumping == false) {
         button2state = 1;
-        // Serial.println("B2 down");
     }
 
     if (digitalRead(BUTTON2_PIN) == LOW && frog2Jumping == false) {
         button2state = 0;
-        // Serial.println("B2 up");
     }
 
 	if (digitalRead(ROCK1_PIN) == HIGH) {
         rock1Throw = 1;
-        // Serial.println("rock1");
     }
     if (digitalRead(ROCK2_PIN) == HIGH) {
         rock2Throw = 1;
-        // Serial.println("rock2");
     }
-    Serial.println("int");
-  
-
-	actionFlag = button1state + button2state + rock1Throw + rock2Throw;
-
- 
-
 }
 
 // Timer ISR (1ms per tick)
@@ -307,28 +353,23 @@ ISR(TIMER0_COMPA_vect) {
 	tick = !tick;
 }
 
-void frogJump(bool &cycleComplete, int &buttonCursor, int &jumpTimer, int &frogJumpFrame, int &buttonUpLastTime_slice, int row) {
-
-	if (time_slice != buttonUpLastTime_slice) {  // Ensures we only increment once per timer tick
-		jumpTimer++;
-		buttonUpLastTime_slice = time_slice;
-	}
-
-	if (jumpTimer >= 20 && !cycleComplete) { // Run through jump sequence
-		switch (frogJumpFrame) {
-			case 0: jump1Top0(buttonCursor, row); break;
-			case 1: jump2Top0(buttonCursor, row); break;
-      		case 2: jump3Top0(buttonCursor, row); break;
-      		case 3: jump4Top0(buttonCursor, row); break;
-			case 4: jump5Top0(buttonCursor, row); break;
-			case 5: jump6Top0(buttonCursor, row); break;
-			case 6: jump7Top0(buttonCursor, row); break;
-			case 7: idleUpTop1(buttonCursor, row); cycleComplete = true; break;
-		}
-
-		frogJumpFrame++;   // Increment the frame state
-		jumpTimer = 0;           // Reset jump timer
-	} 
+// New function to handle jump animation frames
+void frogJumpFrame(bool &cycleComplete, int &buttonCursor, int &frogJumpFrame, int row) {
+    switch (frogJumpFrame) {
+        case 0: jump1Top0(buttonCursor, row); break;
+        case 1: jump2Top0(buttonCursor, row); break;
+        case 2: jump3Top0(buttonCursor, row); break;
+        case 3: jump4Top0(buttonCursor, row); break;
+        case 4: jump5Top0(buttonCursor, row); break;
+        case 5: jump6Top0(buttonCursor, row); break;
+        case 6: jump7Top0(buttonCursor, row); break;
+        case 7: 
+            idleUpTop1(buttonCursor, row); 
+            cycleComplete = true; 
+            break;
+    }
+    
+    frogJumpFrame++; // Increment the frame state
 }
 
 void clearRow(int row) {
@@ -534,13 +575,14 @@ void winner(int row) {
 	
 	byte image02[8] = {B10101, B11111, B11111, B00000, B01111, B11101, B11111, B11010};
 
-  int charOffset = (row == 0) ? FROG1_CHAR_START : FROG2_CHAR_START;
+    int charOffset = (row == 0) ? FROG1_CHAR_START : FROG2_CHAR_START;
 
-  lcd.createChar(charOffset, image02);
-	
+    lcd.createChar(charOffset, image02);
+        
 	
 	lcd.setCursor(15, row);
 	lcd.write(byte(charOffset));
+    frogWon = row + 1;
   
   }
 
