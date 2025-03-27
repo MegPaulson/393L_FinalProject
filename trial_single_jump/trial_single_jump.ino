@@ -8,6 +8,7 @@
 #define FROG1_CHAR_START 0  // Character slots 0-3 for frog 1
 #define FROG2_CHAR_START 4  // Character slots 4-7 for frog 2
 #define INTERRUPT_PIN 2
+#define DEBOUNCE_TIME 20  // 20ms debounce time
 
 const int MAX_ROCKS_PER_ROUND = 3;
 
@@ -65,7 +66,7 @@ int rock2LastTime_Slice = 0;
 
 int actionFlag = 0; // if the player interacts with the game then this is incremented
 int gameTimeoutLastTime_Slice = 0;
-int gameTimeout = 0; // 5 second timer to track whether the game should timeout (clear display and reset)
+bool gameTimeout = false; // 5 second timer to track whether the game should timeout (clear display and reset)
 bool displayOn = true;// if we turn off lcd during idle reset
 
 int jumpAnimationRate = 70; // Frame rate for jump animation (faster than idle)
@@ -79,29 +80,50 @@ int frog2PrevJumpTimeSlice = 0;
 int rock1ThrowCount = 0;
 int rock2ThrowCount = 0;
 
+int gameLastActiveTime = 0;
+int gameTimeoutTime = 0;
+
 int frogWon = 0;
+
+// Add these global variables at the top with other declarations
+volatile int lastInterruptTime = 0;
 
 void setup() {
 
 	lcd.begin(16,   2);
-	// Serial.begin(9600); 
 
 	attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN), buttonsISR, RISING);
 
 	cli(); // Disable interrupts
 
+    // 1. we want our timer frequency to be 1000Hz so that we get 1ms resolution
+    // 2. we know that, we calculate our own output frequency, we do crystal timer frequnecy / prescaler * number in compare register
+    // 3. however, our compare register is 8 bit, and so is our timer register. So the umber in the compare register ius caped at 2^(8)-1 = 255
+    // 4. so, we picked the prscaler to be 64, so that the number in the compare register is 249, under the largest number that can be stored in the compare register
+
 	// Timer Setup (CTC Mode with 64 Prescaler for 1ms resolution)
+    // these are 8 bit registers, and we are setting all the bits to 0!
 	TCCR0A = 0;
 	TCCR0B = 0;
+
+    // 8 bit output compare register
 	OCR0A = 249; // Fires every 1ms
 
-	// Set CTC mode
+    // _BV() takes a number as the parameter and converts it to the appropriate bitmask
+    
+	// Set the timer mode of operation toCTC (clear timer on compare match) mode
+	// TCCR0A &= ~_BV(WGM00);
 	TCCR0A |= _BV(WGM01);
+             //00000101
+
+    // TCCR0B &= ~_BV(WGM02);
 
 	// Set clock prescaler to 64 (CS01 and CS00)
 	TCCR0B |= _BV(CS01) | _BV(CS00);
+    // TCCR0B &= ~_BV(CS02);
 
-	// Enable Timer Compare Match A Interrupt
+	// set "Timer/Counter Interrupt Mask Register" to enable "Timer/Counter0 Compare Match A Interrupt"
+    // now, a interupt is triggered if a Compare Match in Timer0 occurs
 	TIMSK0 |= _BV(OCIE0A);
 
 	sei(); // Enable interrupts
@@ -117,38 +139,42 @@ void loop() {
 
 	actionFlag = button1state + button2state + rock1Throw + rock2Throw;
 
-	if (actionFlag > 0){
-		gameTimeout = 0;
-		if (!displayOn){
+    // some buttons arebeing pressed
+    if (actionFlag > 0){
+        // meaning game is still active at this point
+        gameLastActiveTime = time_slice;
+
+        // if display was turned off before, turn it back on
+        if (!displayOn){
 			lcd.display();
 			displayOn = true;
-			        // Reset all button states when display comes back on
+			// reset all button states when display comes back on
 			button1state = 0;
 			button2state = 0;
 			frog1Jumping = false;
 			frog2Jumping = false;
 			
-			// Reset rock throw counts for new round
+			// reset rock throw counts for new round
 			rock1ThrowCount = 0;
 			rock2ThrowCount = 0;
 		}
 
-	} else {
-		if (time_slice != gameTimeoutLastTime_Slice) {  
-            gameTimeout++;
-            gameTimeoutLastTime_Slice = time_slice;
-        }
+    } else {
+        // no button is being pressed
+        gameTimeoutTime = time_slice;
 
-		if (gameTimeout >= 500) {
-     		lcd.clear();
+    }
+
+    // it is have been 5 seconds of no buttoon pressed since the last time any button was pressed, turn off display
+    if (gameTimeoutTime - gameLastActiveTime >= 10000){
+            lcd.clear();
 			lcd.noDisplay();
 			button1Cursor = 0;
 			button2Cursor = 0;
 			gameTimeout = 0;
+            frogWon = 0;
 			displayOn = false;
-		}
-	}
-
+    }
 
     // button 1 pressed
     if (button1state == 1 && !rock1Placed && frogWon != 1) {  // Only allow idle if no rock is placed
@@ -263,13 +289,13 @@ void loop() {
         }
         
     }
-  // Win condition
-  if (button1Cursor == 15 && button2Cursor != 15) {
-    // crown the frog!
-        winner(0);
-  } else if (button2Cursor == 15 && button1Cursor != 15) {
+    // Win condition
+    if (button1Cursor == 15 && button2Cursor != 15) {
+        // crown the frog!
+            winner(0);
+    } else if (button2Cursor == 15 && button1Cursor != 15) {
         winner(1);
-        }
+    }
 
 	if (rock1Throw == 1 && rock1ThrowCount < MAX_ROCKS_PER_ROUND) { // rock has been thrown by player 1
         if (time_slice != rock1LastTime_Slice) {
@@ -322,10 +348,18 @@ void loop() {
 }
 
 void buttonsISR() {
+
+    // debounce, which we don't really need
+    // int currentTime = time_slice;
+    // if ((currentTime - lastInterruptTime) < DEBOUNCE_TIME) {
+    //     return;  // Exit if not enough time has passed
+    // }
+    // lastInterruptTime = currentTime;  // Update last interrupt time
+
+    // Original button handling code with minor modifications
     if (digitalRead(BUTTON1_PIN) == HIGH && frog1Jumping == false) {
         button1state = 1;
     }
-
     if (digitalRead(BUTTON1_PIN) == LOW && frog1Jumping == false) {
         button1state = 0;
     }
@@ -333,12 +367,11 @@ void buttonsISR() {
     if (digitalRead(BUTTON2_PIN) == HIGH && frog2Jumping == false) {
         button2state = 1;
     }
-
     if (digitalRead(BUTTON2_PIN) == LOW && frog2Jumping == false) {
         button2state = 0;
     }
 
-	if (digitalRead(ROCK1_PIN) == HIGH) {
+    if (digitalRead(ROCK1_PIN) == HIGH) {
         rock1Throw = 1;
     }
     if (digitalRead(ROCK2_PIN) == HIGH) {
@@ -351,6 +384,9 @@ ISR(TIMER0_COMPA_vect) {
     time_slice++;  // Lightweight ISR, only updates a single variable
 	digitalWrite(CLOCK_PIN, tick);
 	tick = !tick;
+
+    Serial.println(time_slice/1000);
+
 }
 
 // New function to handle jump animation frames
